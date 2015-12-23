@@ -1,0 +1,147 @@
+salt = #fileLoad(path="skyId.salt").fileToString();
+salt = #if(
+	operator=#fileExists(path="skyId.salt"),
+	operand="",
+	eq=#object(
+		a=#fileSave(obj=#randomString(length="2048"),path="skyId.salt"),
+		b=salt
+	).cget(b=""),
+	ne=salt
+).cache(name="skyIdSalt");
+
+secret=#fileLoad(path="skyId.secret").fileToString();
+secret=#if(
+	operator=#fileExists(path="skyId.secret"),
+	operand="false",
+	eq=#object(
+		a=#fileSave(obj=#randomString(length="2048"),path="skyId.secret"),
+		b=secret
+	).cget(b=""),
+	ne=secret
+).cache(name="skyIdSecret");
+
+secret=#pbkdf2(
+	obj=secret,
+	salt=salt,
+	iterations="10000",
+	hashLength="16"
+).cache(name="skyidSecret");
+
+saltedId=#pbkdf2(
+	obj="@id",
+	salt=salt,
+	iterations="10000",
+	hashLength="16"
+).debug(prefix="ID: ");
+
+saltedPassword=#pbkdf2(
+	obj="@password",
+	salt=salt,
+	iterations="10000",
+	hashLength="64"
+);
+
+retrieve=#skyrepoGet(
+	type="encryptedValue",
+	id=saltedId,
+	explicit="true"
+).catch(null=#error(code="401")).cget(payload="").aesDecrypt(
+	secret=secret,
+	iv=saltedId
+).toObject();
+
+payload=#object(
+	payload = #toObject(obj="@payload").aesEncrypt(
+		secret=secret,
+		iv=saltedId
+	)
+).put(
+	_key=#schema(),
+	_value="http://schema.eduworks.com/ebac/0.1/"
+).put(
+	_key=#type(),
+	_value="http://schema.eduworks.com/ebac/0.1/encryptedValue"
+);
+
+retreiveFormally=#if(
+	operator=saltedPassword,
+	operand=retrieve.cget(password=""),
+	eq=payload.call(
+		payload=retrieve.put(token=#randomString(length="20"))
+	).skyrepoPut(
+		type="encryptedValue",
+		id=saltedId
+	).debug(prefix="Re-put: ").cget(payload="").aesDecrypt(
+		secret=secret,
+		iv=saltedId
+	).toObject().put(password="").debug(prefix="Re-decrypted: "),
+	ne=#error(code="401")
+);
+
+#skyidRetreive = retreiveFormally;
+
+store=payload.skyrepoPut(
+	type="encryptedValue",
+	id=saltedId
+);
+
+storeFormally=#if(
+	operator=retrieve.cget(token=""),
+	operand="@token",
+	eq=store,
+	ne=#error(code="403",msg="An error in synchronization has occurred. Please re-login and try again.")
+);
+
+#skyidStore = storeFormally;
+
+create=#skyrepoGet(
+	type="encryptedValue",
+	id=saltedId,
+	explicit="true"
+).catch(
+	null=#object(
+		a=store,
+		b="ok"
+	).cget(b="")
+);
+
+create = #object(
+	a=create,
+	b=#object(text="Sky User Created.").httpPost(multipart="false",contentType="text/plain",url="https://hooks.slack.com/services/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")
+)
+
+#skyidCreate=create;
+
+postData=#fileFromDatastream(name="credentialRequest");
+
+postObject=postData.fileToString().toObject();
+
+login=#skyidRetreive(
+	id=postObject.cget(username=""),
+	password=postObject.cget(password="")
+).displayJson(_collapse="true");
+/sky/id/login=login;
+
+postData=#fileFromDatastream(name="credentialCommit");
+
+postObject=postData.fileToString().toObject();
+
+store=#skyidStore(
+	id=postObject.cget(username=""),
+	password=postObject.cget(password=""),
+	token=postObject.cget(token=""),
+	payload=postObject.cget(credentials="").put(password=saltedPassword.call(password=postObject.cget(password="")))
+);
+/sky/id/commit=store;
+
+postData=#fileFromDatastream(name="credentialCommit");
+
+postObject=postData.fileToString().toObject();
+
+store=#skyidCreate(
+	id=postObject.cget(username=""),
+	password=postObject.cget(password=""),
+	token=postObject.cget(token=""),
+	payload=postObject.cget(credentials="").put(password=saltedPassword.call(password=postObject.cget(password="")))
+);
+/sky/id/create=store;
