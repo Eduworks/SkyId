@@ -18,7 +18,7 @@ secret=#if(
 		b=secret
 	).cget(b=""),
 	ne=secret
-).cache(name="skyIdSecret");
+);
 
 secret=#pbkdf2(
 	obj=secret,
@@ -27,12 +27,23 @@ secret=#pbkdf2(
 	hashLength="16"
 ).cache(name="skyidSecret");
 
+ppk=#fileLoad(path="skyId.pem").fileToString();
+ppk=#if(
+	operator=#fileExists(path="skyId.pem"),
+	operand="false",
+	eq=#object(
+		a=#fileSave(obj=#rsaGenerate(),path="skyId.pem"),
+		b=ppk
+	).cget(b=""),
+	ne=ppk
+).cache(name="skyidPpk");
+
 saltedId=#pbkdf2(
 	obj="@id",
 	salt=salt,
 	iterations="10000",
 	hashLength="16"
-).debug(prefix="ID: ");
+);
 
 saltedPassword=#pbkdf2(
 	obj="@password",
@@ -41,11 +52,34 @@ saltedPassword=#pbkdf2(
 	hashLength="64"
 );
 
-retrieve=#skyrepoGet(
-	type="encryptedValue",
-	id=saltedId,
-	explicit="true"
-).catch(null=#error(code="401")).cget(payload="").aesDecrypt(
+signatureSheet=#object(
+	filename="signatureSheet.json",
+	mimeType="application/json",
+	data=#object(
+		a=#toObject(obj="@signableObject").put(
+			_key=#signature(),
+			_value=#toObject(obj="@signableObject").rsaSign(ppk=ppk)
+		).call(
+			signableObject=#object(
+				expiry=#date(_raw="true").add(z="1000")
+			).put(
+				_key=#type(),
+				_value="http://schema.eduworks.com/ebac/0.1/timeLimitedSignature"
+			).put(
+				_key=#owner(),
+				_value=ppk.rsaPpkToPk()
+			)
+		)
+	).valueSet().toString()
+).stringToFile();
+
+retrieve=signatureSheet.toDatastream(
+	paramName="signatureSheet",
+	op=#skyrepoGet(
+		type="encryptedValue",
+		id=saltedId
+	)
+).cget(payload="").aesDecrypt(
 	secret=secret,
 	iv=saltedId
 ).toObject();
@@ -61,6 +95,9 @@ payload=#object(
 ).put(
 	_key=#type(),
 	_value="http://schema.eduworks.com/ebac/0.1/encryptedValue"
+).put(
+	_key=#owner(),
+	_value=ppk.rsaPpkToPk()
 );
 
 retreiveFormally=#if(
@@ -71,10 +108,10 @@ retreiveFormally=#if(
 	).skyrepoPut(
 		type="encryptedValue",
 		id=saltedId
-	).debug(prefix="Re-put: ").cget(payload="").aesDecrypt(
+	).cget(payload="").aesDecrypt(
 		secret=secret,
 		iv=saltedId
-	).toObject().put(password="").debug(prefix="Re-decrypted: "),
+	).toObject().put(password=""),
 	ne=#error(code="401")
 );
 
@@ -94,12 +131,13 @@ storeFormally=#if(
 
 #skyidStore = storeFormally;
 
-create=#skyrepoGet(
-	type="encryptedValue",
-	id=saltedId,
-	explicit="true"
-).catch(
-	null=#object(
+create=#if(
+	operator=#skyrepoGet(
+		type="encryptedValue",
+		id=saltedId
+	),
+	operand="",
+	eq=#object(
 		a=store,
 		b="ok"
 	).cget(b="")
