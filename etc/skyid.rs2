@@ -61,7 +61,7 @@ signatureSheet=#object(
 			_value=#toObject(obj="@signableObject").rsaSign(ppk=ppk)
 		).call(
 			signableObject=#object(
-				expiry=#date(_raw="true").add(z="1000")
+				expiry=#date(_raw="true").add(z="1000").toLong()
 			).put(
 				_key=#type(),
 				_value="http://schema.eduworks.com/ebac/0.1/timeLimitedSignature"
@@ -73,12 +73,9 @@ signatureSheet=#object(
 	).valueSet().toString()
 ).stringToFile();
 
-retrieve=signatureSheet.toDatastream(
-	paramName="signatureSheet",
-	op=#skyrepoGet(
-		type="encryptedValue",
-		id=saltedId
-	)
+retrieve=#skyrepoGet(
+	type="schema.eduworks.com.ebac.0.1.encryptedValue",
+	id=saltedId
 ).cget(payload="").aesDecrypt(
 	secret=secret,
 	iv=saltedId
@@ -106,7 +103,7 @@ retreiveFormally=#if(
 	eq=payload.call(
 		payload=retrieve.put(token=#randomString(length="20"))
 	).skyrepoPut(
-		type="encryptedValue",
+		type="schema.eduworks.com.ebac.0.1.encryptedValue",
 		id=saltedId
 	).cget(payload="").aesDecrypt(
 		secret=secret,
@@ -115,10 +112,15 @@ retreiveFormally=#if(
 	ne=#error(code="401")
 );
 
+retreiveFormally = signatureSheet.toDatastream(
+	paramName="signatureSheet",
+	op=retreiveFormally
+);
+	
 #skyidRetreive = retreiveFormally;
 
-store=payload.skyrepoPut(
-	type="encryptedValue",
+store=payload.debug().skyrepoPut(
+	type="schema.eduworks.com.ebac.0.1.encryptedValue",
 	id=saltedId
 );
 
@@ -129,24 +131,31 @@ storeFormally=#if(
 	ne=#error(code="403",msg="An error in synchronization has occurred. Please re-login and try again.")
 );
 
+storeFormally = signatureSheet.toDatastream(
+	paramName="signatureSheet",
+	op=storeFormally
+);
+
 #skyidStore = storeFormally;
 
 create=#if(
 	operator=#skyrepoGet(
-		type="encryptedValue",
+		type="schema.eduworks.com.ebac.0.1.encryptedValue",
 		id=saltedId
 	),
 	operand="",
-	eq=#object(
-		a=store,
-		b="ok"
-	).cget(b="")
+	eq=store
 );
 
 create = #object(
 	a=create,
-	b=#object(text="Sky User Created.").httpPost(multipart="false",contentType="text/plain",url="https://hooks.slack.com/services/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")
-)
+	b=#object(text="Sky User Created.").httpPost(multipart="false",contentType="text/plain",url="https://zhooks.slack.com/services/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")
+);
+
+create = signatureSheet.toDatastream(
+	paramName="signatureSheet",
+	op=create
+);
 
 #skyidCreate=create;
 
@@ -168,7 +177,7 @@ store=#skyidStore(
 	id=postObject.cget(username=""),
 	password=postObject.cget(password=""),
 	token=postObject.cget(token=""),
-	payload=postObject.cget(credentials="").put(password=saltedPassword.call(password=postObject.cget(password="")))
+	payload=postObject.cget(credentials="").put(token=postObject.cget(token=""),password=saltedPassword.call(password=postObject.cget(password="")))
 );
 /sky/id/commit=store;
 
@@ -180,6 +189,6 @@ store=#skyidCreate(
 	id=postObject.cget(username=""),
 	password=postObject.cget(password=""),
 	token=postObject.cget(token=""),
-	payload=postObject.cget(credentials="").put(password=saltedPassword.call(password=postObject.cget(password="")))
+	payload=postObject.cget(credentials="").put(token=postObject.cget(token=""),password=saltedPassword.call(password=postObject.cget(password="")))
 );
 /sky/id/create=store;
