@@ -136,6 +136,11 @@ storeFormally = signatureSheet.toDatastream(
 	op=storeFormally
 );
 
+storeFormally = #object(
+	a=#addWhitespaceAnalyzer(),
+	b=storeFormally
+);
+
 #skyidStore = storeFormally;
 
 create=#if(
@@ -155,6 +160,11 @@ create = #object(
 create = signatureSheet.toDatastream(
 	paramName="signatureSheet",
 	op=create
+);
+
+create = #object(
+	a=#addWhitespaceAnalyzer(),
+	b=create
 );
 
 #skyidCreate=create;
