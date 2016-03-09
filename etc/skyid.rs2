@@ -73,13 +73,21 @@ signatureSheet=#object(
 	).valueSet().toString()
 ).stringToFile();
 
-retrieve=#skyrepoGet(
-	type="schema.eduworks.com.ebac.0.1.encryptedValue",
-	id=saltedId
-).cget(payload="").aesDecrypt(
-	secret=secret,
-	iv=saltedId
-).toObject();
+retrieve=#if(
+	operator="@payload",
+	operand="",
+	eq=#error(code="404", msg="User Does Not Exist"),
+	ne=#aesDecrypt(
+		obj="@payload",
+		secret=secret,
+		iv=saltedId
+	).toObject()
+).ccall(
+	payload=#skyrepoGet(
+		type="schema.eduworks.com.ebac.0.1.encryptedValue",
+		id=saltedId
+	).cget(payload="")
+);
 
 payload=#object(
 	payload = #toObject(obj="@payload").aesEncrypt(
